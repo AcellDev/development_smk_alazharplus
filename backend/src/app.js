@@ -1,0 +1,20 @@
+import express from 'express';
+import { authRouter } from './modules/auth/auth.routes.js';
+import { healthRouter } from './modules/health/health.routes.js';
+import { contentRouter } from './modules/content/content.routes.js';
+import { ppdbRouter } from './modules/ppdb/ppdb.routes.js';
+import { lmsRouter } from './modules/lms/lms.routes.js';
+import { corsMiddleware } from './shared/http/cors.js';
+import { notFoundHandler, errorHandler } from './shared/http/errors.js';
+
+export const app = express();
+app.disable('x-powered-by');
+app.use(corsMiddleware);
+app.use(express.json({ limit: '1mb' }));
+app.use('/api/health', healthRouter);
+app.use('/api/auth', authRouter);
+app.use('/api/content', contentRouter);
+app.use('/api/ppdb', ppdbRouter);
+app.use('/api/lms', lmsRouter);
+app.use(notFoundHandler);
+app.use(errorHandler);

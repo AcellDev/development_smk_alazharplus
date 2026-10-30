@@ -1,0 +1,20 @@
+{
+  "name": "@smk-alazhar/backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "migrate": "node src/database/migrate.js",
+    "seed": "node src/database/seed.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "file-type": "^21.1.1",
+    "multer": "^2.0.2",
+    "pg": "^8.16.3"
+  }
+}
