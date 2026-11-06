@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Card, EmptyState, Input, Spinner, TextArea } from './components/ui.jsx';
-import { DashboardLayout, PublicLayout } from './layouts.jsx';
+import { DashboardLayout, DashboardStatCards, PublicLayout } from './layouts.jsx';
 import { API_URL, requestJson } from './content-api.js';
 
 function usePpdbData(path) {
@@ -36,7 +36,7 @@ export function PpdbInfoPage() {
   </PpdbShell>;
 }
 
-const blankApplication = { fullName: '', email: '', password: '', phone: '', address: '', guardianName: '', guardianRelationship: '', guardianPhone: '', previousInstitution: '', previousGraduationYear: '' };
+const blankApplication = { fullName: '', email: '', password: '', phone: '', address: '', programId: '', guardianName: '', guardianRelationship: '', guardianPhone: '', previousInstitution: '', previousGraduationYear: '' };
 
 export function PpdbRegistrationPage() {
   const config = usePpdbData('/ppdb/configuration');
@@ -60,9 +60,10 @@ export function PpdbRegistrationPage() {
           <Input label="Nama lengkap" required maxLength={160} autoComplete="name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
           <Input label="Email akun" type="email" required maxLength={254} autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <Input label="Password akun" type="password" required minLength={8} maxLength={72} autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          <div className="field"><label htmlFor="ppdb-program">Program keahlian</label><select id="ppdb-program" className="input" required value={form.programId} onChange={(e) => setForm({ ...form, programId: e.target.value })}><option value="">Pilih program keahlian</option>{(config.data.programs ?? []).map((program) => <option value={program.id} key={program.id}>{program.name}</option>)}</select></div>
           <Input label="Nomor telepon" type="tel" maxLength={50} autoComplete="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           <TextArea label="Alamat" rows={3} maxLength={1000} autoComplete="street-address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-        </div></fieldset>
+        </div>{!config.data.programs?.length && <Alert tone="warning">Program keahlian belum tersedia untuk pendaftaran. Hubungi admin sekolah.</Alert>}</fieldset>
         <fieldset><legend>Orang tua/wali <span className="muted">(opsional)</span></legend><div className="form-grid">
           <Input label="Nama orang tua/wali" maxLength={160} value={form.guardianName} onChange={(e) => setForm({ ...form, guardianName: e.target.value })} />
           <Input label="Hubungan" maxLength={60} value={form.guardianRelationship} onChange={(e) => setForm({ ...form, guardianRelationship: e.target.value })} />
@@ -73,7 +74,7 @@ export function PpdbRegistrationPage() {
           <Input label="Tahun lulus" type="number" min="1900" max={new Date().getFullYear() + 1} value={form.previousGraduationYear} onChange={(e) => setForm({ ...form, previousGraduationYear: e.target.value })} />
         </div></fieldset>
         <p className="form-note">Dengan membuat akun, Anda dapat mengunggah dokumen, mengirim pendaftaran, dan memantau status. Jangan gunakan email atau password milik orang lain.</p>
-        <Button type="submit" disabled={saving}>{saving ? <><Spinner /> Menyimpan…</> : 'Buat akun dan simpan draf'}</Button>
+        <Button type="submit" disabled={saving || !config.data.programs?.length}>{saving ? <><Spinner /> Menyimpan…</> : 'Buat akun dan simpan draf'}</Button>
       </form>
     </>}
   </PpdbShell>;
@@ -102,6 +103,7 @@ export function PpdbStatusPage() {
     setState('loading'); setError('');
     try {
       const session = await requestJson('/auth/session');
+      if (session.user.role === 'student') { window.location.assign('/dashboard'); return; }
       if (session.user.role !== 'applicant') throw new Error('Masuk menggunakan akun calon siswa untuk melihat status pendaftaran.');
       const item = await requestJson('/ppdb/applications/mine');
       const guardian = item.guardians[0] ?? {};
@@ -221,6 +223,7 @@ function PpdbAdmin({ user }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [applications, setApplications] = useState([]);
+  const [summaryApplications, setSummaryApplications] = useState([]);
   const [selectedApplication, setSelectedApplication] = useState(null);
   const [decision, setDecision] = useState('');
   const [decisionNote, setDecisionNote] = useState('');
@@ -251,7 +254,13 @@ function PpdbAdmin({ user }) {
       if (statusFilter) query.set('status', statusFilter);
       if (search.trim()) query.set('search', search.trim());
       if (periodFilter) query.set('periodId', periodFilter);
-      const list = await requestJson(`/ppdb/admin/applications?${query}`); setApplications(list);
+      const summaryQuery = new URLSearchParams();
+      if (periodFilter) summaryQuery.set('periodId', periodFilter);
+      const [list, summaryList] = await Promise.all([
+        requestJson(`/ppdb/admin/applications?${query}`),
+        requestJson(`/ppdb/admin/applications?${summaryQuery}`),
+      ]);
+      setApplications(list); setSummaryApplications(summaryList);
       if (selectedApplication && !list.some((item) => item.id === selectedApplication.id)) setSelectedApplication(null);
     } catch (requestError) { setError(requestError.message); }
     finally { setLoading(false); }
@@ -291,14 +300,23 @@ function PpdbAdmin({ user }) {
     try { setSelectedApplication(await requestJson(`/ppdb/admin/applications/${item.id}`)); }
     catch (requestError) { setError(requestError.message); }
   }
+  useEffect(() => {
+    const applicationId = new URLSearchParams(window.location.search).get('application');
+    if (applicationId) showApplication({ id: applicationId });
+  }, []);
 
   async function updateStatus(event) {
     event.preventDefault(); if (!selectedApplication || !decision) return;
     if (!window.confirm(`Ubah status menjadi “${decision}”?`)) return;
     setSaving(true); setError(''); setNotice('');
     try {
-      await requestJson(`/ppdb/admin/applications/${selectedApplication.id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: decision, note: decisionNote }) });
-      setNotice('Status pendaftaran diperbarui dan tercatat dalam riwayat.'); setDecision(''); setDecisionNote('');
+      const result = await requestJson(`/ppdb/admin/applications/${selectedApplication.id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: decision, note: decisionNote }) });
+      const accountNotice = result.status === 'Lulus'
+        ? result.lmsAccountProvisioned
+          ? ` Akun LMS Siswa otomatis aktif. Login memakai email pendaftaran dan password awal login123.${result.lmsClassAssigned ? ` Siswa masuk ke kelas tujuan program ${result.programName}.` : ' Belum ada kelas tujuan aktif yang ditandai untuk program ini; atur kelas pada Pengaturan LMS.'}`
+          : ' Status diterima. Akun terdaftar sebelumnya dipertahankan; silakan kelola aksesnya melalui Kelola Pengguna.'
+        : '';
+      setNotice(`Status pendaftaran diperbarui dan tercatat dalam riwayat.${accountNotice}`); setDecision(''); setDecisionNote('');
       await showApplication(selectedApplication); await loadApplications();
     } catch (requestError) { setError(requestError.message); }
     finally { setSaving(false); }
@@ -306,13 +324,21 @@ function PpdbAdmin({ user }) {
 
   async function logout() { await requestJson('/auth/logout', { method: 'POST' }).catch(() => {}); window.location.assign('/'); }
 
+  const ppdbStats = [
+    { label: 'Total pendaftar', value: summaryApplications.length, icon: '◎' },
+    { label: 'Menunggu verifikasi', value: summaryApplications.filter((item) => ['Dikirim', 'Perlu Perbaikan'].includes(item.status)).length, icon: '◷' },
+    { label: 'Diterima', value: summaryApplications.filter((item) => item.status === 'Lulus').length, icon: '✓' },
+    { label: 'Ditolak', value: summaryApplications.filter((item) => item.status === 'Tidak Lulus').length, icon: '×' },
+  ];
   return <DashboardLayout user={user} onLogout={logout} loggingOut={false}><div className="page-heading"><div><p className="eyebrow">Penerimaan peserta didik baru</p><h1>Dashboard panitia</h1></div></div>
+    <DashboardStatCards items={ppdbStats} />
+    <Alert tone="info" className="ppdb-lms-notice">Setelah status pendaftar diubah menjadi <strong>Lulus</strong>, akun otomatis diaktifkan sebagai Siswa dengan password awal <code>login123</code> dan dimasukkan ke kelas tujuan otomatis yang ditandai untuk program pilihannya.</Alert>
     {error && <Alert tone="danger" role="alert">{error}</Alert>}{notice && <Alert tone="info" role="status">{notice}</Alert>}
     <div className="ppdb-admin-tabs" role="tablist" aria-label="Menu PPDB">{[['applications', 'Pendaftar'], ...Object.entries(ppdbResources)].map(([key, label]) => <button type="button" role="tab" aria-selected={tab === key} className={tab === key ? 'selected' : ''} key={key} onClick={() => switchTab(key)}>{label}</button>)}</div>
     {tab === 'applications' ? <section className="ppdb-admin-workspace">
       <div className="surface-card application-list-panel"><h2>Daftar pendaftar</h2><div className="filter-grid"><Input label="Cari nama, email, atau nomor" value={search} onChange={(e) => setSearch(e.target.value)} /><div className="field"><label htmlFor="app-status-filter">Status</label><select id="app-status-filter" className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="">Semua status</option>{allStatuses.map((value) => <option key={value}>{value}</option>)}</select></div><div className="field"><label htmlFor="app-period-filter">Periode</label><select id="app-period-filter" className="input" value={periodFilter} onChange={(e) => setPeriodFilter(e.target.value)}><option value="">Semua periode</option>{periods.map((p) => <option value={p.id} key={p.id}>{p.name}</option>)}</select></div><Button variant="secondary" onClick={loadApplications}>Cari</Button></div>
         <p className="muted result-limit">Menampilkan paling banyak 100 hasil.</p>
-        {loading ? <PageLoading /> : applications.length ? <div className="application-table-wrap"><table className="application-table"><thead><tr><th>No. pendaftaran</th><th>Nama</th><th>Status</th></tr></thead><tbody>{applications.map((item) => <tr key={item.id} className={selectedApplication?.id === item.id ? 'selected-row' : ''}><td><button className="text-link" onClick={() => showApplication(item)}>{item.registrationNumber}</button></td><td>{item.fullName}<small>{item.email}</small></td><td><span className="status-label" data-status={item.status}>{item.status}</span></td></tr>)}</tbody></table></div> : <EmptyState title="Belum ada pendaftar" description="Pendaftar yang dikirim akan tampil di sini." />}
+        {loading ? <PageLoading /> : applications.length ? <div className="application-table-wrap"><table className="application-table"><thead><tr><th>No. pendaftaran</th><th>Nama</th><th>Program</th><th>Status</th></tr></thead><tbody>{applications.map((item) => <tr key={item.id} className={selectedApplication?.id === item.id ? 'selected-row' : ''}><td><button className="text-link" onClick={() => showApplication(item)}>{item.registrationNumber}</button></td><td>{item.fullName}<small>{item.email}</small></td><td>{item.programName || 'Belum dipilih'}</td><td><span className="status-label" data-status={item.status}>{item.status}</span></td></tr>)}</tbody></table></div> : <EmptyState title="Belum ada pendaftar" description="Pendaftar yang dikirim akan tampil di sini." />}
       </div>
       <div className="surface-card application-detail-panel">{selectedApplication ? <ApplicationReview item={selectedApplication} decision={decision} setDecision={setDecision} note={decisionNote} setNote={setDecisionNote} onUpdate={updateStatus} saving={saving} /> : <EmptyState title="Pilih pendaftar" description="Pilih nomor pendaftaran untuk memeriksa data dan dokumen." />}</div>
     </section> : <section className="content-admin-grid ppdb-config-grid">
@@ -344,7 +370,7 @@ function ApplicationReview({ item, decision, setDecision, note, setNote, onUpdat
   const allowed = item.status === 'Dikirim' ? ['Perlu Perbaikan', 'Terverifikasi'] : item.status === 'Terverifikasi' ? ['Lulus', 'Tidak Lulus'] : [];
   const guardian = item.guardians[0];
   return <div className="review-details"><p className="eyebrow">Detail pendaftar</p><h2>{item.registrationNumber}</h2><dl className="review-data">
-    <div><dt>Nama</dt><dd>{item.fullName}</dd></div><div><dt>Email</dt><dd>{item.email}</dd></div><div><dt>Telepon</dt><dd>{item.phone || 'Belum diisi'}</dd></div><div><dt>Alamat</dt><dd>{item.address || 'Belum diisi'}</dd></div><div><dt>Periode</dt><dd>{item.periodName}</dd></div><div><dt>Status</dt><dd><strong>{item.status}</strong></dd></div>
+    <div><dt>Nama</dt><dd>{item.fullName}</dd></div><div><dt>Email</dt><dd>{item.email}</dd></div><div><dt>Program</dt><dd>{item.programName || 'Belum dipilih'}</dd></div><div><dt>Telepon</dt><dd>{item.phone || 'Belum diisi'}</dd></div><div><dt>Alamat</dt><dd>{item.address || 'Belum diisi'}</dd></div><div><dt>Periode</dt><dd>{item.periodName}</dd></div><div><dt>Status</dt><dd><strong>{item.status}</strong></dd></div>
     <div><dt>Orang tua/wali</dt><dd>{guardian ? `${guardian.fullName}${guardian.relationship ? ` (${guardian.relationship})` : ''} · ${guardian.phone || 'telepon belum diisi'}` : 'Belum diisi'}</dd></div><div><dt>Sekolah asal</dt><dd>{item.previousEducation ? `${item.previousEducation.institutionName}${item.previousEducation.graduationYear ? ` · ${item.previousEducation.graduationYear}` : ''}` : 'Belum diisi'}</dd></div>
   </dl>
   <section><h3>Dokumen</h3>{item.documents.length ? <ul className="review-documents">{item.documents.map((doc) => <li key={doc.id}><span>{doc.requirementName || 'Dokumen'}: {doc.originalName}</span><button className="text-link" type="button" onClick={() => downloadDocument(doc.id, doc.originalName).catch(() => {})}>Unduh</button></li>)}</ul> : <p className="muted">Belum ada dokumen.</p>}</section>

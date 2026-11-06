@@ -13,8 +13,13 @@ export function validateClass(body = {}, allowActive = false) {
   const name = text(body.name, 'Nama kelas', 120, true);
   const academicYear = text(body.academicYear, 'Tahun ajaran', 30, true);
   const description = text(body.description, 'Deskripsi', 1000, false);
+  const programId = body.programId == null || body.programId === '' ? null : String(body.programId);
+  if (programId && !uuidPattern.test(programId)) throw new LmsValidationError('Program keahlian tidak valid.');
+  if (body.isPpdbDefault != null && ![true, false, 'true', 'false'].includes(body.isPpdbDefault)) throw new LmsValidationError('Status kelas tujuan PPDB tidak valid.');
+  const isPpdbDefault = body.isPpdbDefault === true || body.isPpdbDefault === 'true';
+  if (isPpdbDefault && !programId) throw new LmsValidationError('Tautkan kelas ke program sebelum memilihnya sebagai kelas tujuan PPDB.');
   if (allowActive && ![true, false, 'true', 'false'].includes(body.isActive)) throw new LmsValidationError('Status kelas tidak valid.');
-  return { name, academicYear, description, isActive: allowActive ? body.isActive === true || body.isActive === 'true' : true };
+  return { name, academicYear, description, programId, isPpdbDefault, isActive: allowActive ? body.isActive === true || body.isActive === 'true' : true };
 }
 
 export function validateSubject(body = {}) {

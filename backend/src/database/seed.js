@@ -14,8 +14,8 @@ const seedAccounts = [
 if (process.env.NODE_ENV === 'production') {
   console.error('Seed development ditolak ketika NODE_ENV=production.');
   process.exitCode = 1;
-} else if (!process.env.SEED_DEMO_PASSWORD || process.env.SEED_DEMO_PASSWORD.length < 12) {
-  console.error('Atur SEED_DEMO_PASSWORD minimal 12 karakter di .env sebelum menjalankan seed.');
+} else if (!process.env.SEED_DEMO_PASSWORD) {
+  console.error('Atur SEED_DEMO_PASSWORD di .env sebelum menjalankan seed.');
   process.exitCode = 1;
 } else {
   await seedDevelopmentData();
@@ -42,6 +42,7 @@ async function seedDevelopmentData() {
     }
 
     await seedCompanyProfile(client, users.admin_website);
+    await seedGalleries(client);
     const periodId = await seedPpdb(client, users.admin_ppdb);
     await seedLms(client, users.admin_website, users.teacher, users.student);
 
@@ -55,6 +56,22 @@ async function seedDevelopmentData() {
   } finally {
     client.release();
     await pool.end();
+  }
+}
+
+async function seedGalleries(client) {
+  const items = [
+    ['Belajar dan bertumbuh bersama', 'Kegiatan belajar', 'Ilustrasi suasana pembelajaran di lingkungan sekolah.'],
+    ['Eksplorasi keterampilan', 'Laboratorium & praktik', 'Ilustrasi kegiatan praktik dan pengembangan keterampilan.'],
+    ['Ruang untuk berkolaborasi', 'Ekstrakurikuler', 'Ilustrasi kegiatan pengembangan minat dan kebersamaan.'],
+    ['Momen kebersamaan sekolah', 'Acara sekolah', 'Ilustrasi acara dan kebersamaan warga sekolah.'],
+  ];
+  for (const [title, category, description] of items) {
+    await client.query(
+      `INSERT INTO galleries (title, category, description, image_url, activity_date)
+       VALUES ($1,$2,$3,'',NULL) ON CONFLICT (category,title) DO NOTHING`,
+      [title, category, description],
+    );
   }
 }
 

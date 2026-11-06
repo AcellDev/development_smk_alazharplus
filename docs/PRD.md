@@ -47,7 +47,7 @@ Catatan: pemisahan Admin Website dan Admin PPDB dapat disatukan pada implementas
 
 ### 4.2 Modul PPDB Online
 - Informasi persyaratan, alur, jadwal, dan periode PPDB.
-- Formulir pendaftaran dengan data calon siswa, orang tua/wali, alamat, dan pendidikan sebelumnya sesuai kebutuhan sekolah.
+- Formulir pendaftaran dengan data calon siswa, orang tua/wali, alamat, pendidikan sebelumnya, serta pilihan program keahlian.
 - Nomor pendaftaran otomatis yang unik.
 - Unggah dokumen persyaratan dengan validasi tipe dan ukuran file.
 - Ringkasan pendaftaran sebelum pengiriman.
@@ -56,6 +56,8 @@ Catatan: pemisahan Admin Website dan Admin PPDB dapat disatukan pada implementas
 - Verifikasi data dan dokumen dengan catatan perbaikan bila diperlukan.
 - Perubahan status yang tercatat: **Draft**, **Dikirim**, **Perlu Perbaikan**, **Terverifikasi**, **Lulus**, atau **Tidak Lulus**.
 - Pengelolaan jadwal, persyaratan, kuota, dan pengumuman PPDB oleh admin.
+- Saat status pendaftar berubah menjadi **Lulus**, sistem mempromosikan akun calon siswa menjadi akun Siswa LMS; akun baru memakai password awal `login123` yang disimpan sebagai hash.
+- Admin Website menandai satu kelas tujuan otomatis untuk setiap program. Sistem menautkan siswa yang lulus ke kelas aktif yang ditandai untuk program pilihannya. Jika kelas tujuan belum ditetapkan, dashboard panitia menampilkan status bahwa penempatan kelas belum tersedia.
 - Cetak atau unduh bukti pendaftaran sederhana.
 - Riwayat perubahan status penting untuk kebutuhan audit.
 
@@ -68,11 +70,12 @@ Catatan: pemisahan Admin Website dan Admin PPDB dapat disatukan pada implementas
 - Siswa dapat mengumpulkan tugas sebelum tenggat, dengan dukungan pengumpulan ulang sesuai aturan tugas.
 - Guru dapat melihat daftar pengumpulan, memberi nilai, dan menambahkan umpan balik.
 - Siswa dapat melihat status pengumpulan, nilai, dan umpan balik yang telah dipublikasikan.
-- Daftar kelas dan keanggotaan siswa dikelola oleh admin atau mekanisme yang disetujui sekolah.
+- Daftar kelas, hubungan kelas dengan program keahlian, serta keanggotaan siswa dikelola oleh admin.
 
 ### 4.4 Autentikasi dan Hak Akses
 - Login/logout untuk area terproteksi.
 - Otorisasi berbasis peran (RBAC) di backend.
+- Admin Website dan Admin PPDB dapat mengelola akun pengguna sesuai kewenangannya, termasuk membuat akun Guru/Siswa, memperbarui data, mereset password, serta menonaktifkan akun.
 - Siswa, guru, dan admin hanya dapat mengakses data yang menjadi kewenangannya.
 - Validasi input di frontend dan backend.
 - Password disimpan dalam bentuk hash, bukan teks biasa.

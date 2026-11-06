@@ -6,7 +6,7 @@ import { fileTypeFromBuffer } from 'file-type';
 import { requireAuthentication, requireRoles } from '../auth/auth.middleware.js';
 import {
   createApplicantApplication, deleteAdminItem, deletePeriod, getAdminApplication, getAdminCollection,
-  getAdminPeriods, getApplicantForUser, getApplicantUploadTarget, getAuthorizedDocument, getPublicConfiguration,
+  getAdminDashboard, getAdminPeriods, getApplicantForUser, getApplicantUploadTarget, getAuthorizedDocument, getPublicConfiguration,
   listAdminApplications, saveAdminItem, saveApplicantDocument, savePeriod, submitApplicantApplication,
   updateApplicantDetails, updateApplicationStatus,
 } from './ppdb.model.js';
@@ -185,6 +185,10 @@ ppdbRouter.get('/admin/applications', ...committeeOnly, async (request, response
     if (periodId) validateId(periodId, 'Periode');
     response.json(await listAdminApplications({ status, search, periodId }));
   } catch (error) { next(error); }
+});
+
+ppdbRouter.get('/admin/dashboard', ...committeeOnly, async (_request, response, next) => {
+  try { response.json(await getAdminDashboard()); } catch (error) { next(error); }
 });
 
 ppdbRouter.get('/admin/applications/:id', ...committeeOnly, async (request, response, next) => {

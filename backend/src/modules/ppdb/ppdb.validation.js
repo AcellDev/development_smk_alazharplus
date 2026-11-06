@@ -19,12 +19,17 @@ export function validateApplication(body = {}) {
   if (typeof password !== 'string' || password.length < 8 || Buffer.byteLength(password, 'utf8') > 72) {
     throw new PpdbValidationError('Password wajib berisi 8–72 byte.');
   }
-  return { ...details, email, password };
+  const programId = String(body.programId ?? '');
+  validateId(programId, 'Program keahlian');
+  return { ...details, email, password, programId };
 }
 
 export function validateApplicantUpdate(body = {}) {
   ensureObject(body);
-  return validateApplicantDetails(body);
+  const details = validateApplicantDetails(body);
+  const programId = body.programId == null || body.programId === '' ? null : String(body.programId);
+  if (programId) validateId(programId, 'Program keahlian');
+  return { ...details, programId };
 }
 
 export function validatePeriod(body = {}) {

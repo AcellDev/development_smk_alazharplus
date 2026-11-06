@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Card, EmptyState, Input, Spinner } from './components/ui.jsx';
+import { Alert, Button, Card, Input, Spinner } from './components/ui.jsx';
 import { DashboardLayout, PublicLayout } from './layouts.jsx';
-import { ContactPage, ContentAdminPage, HomePage, NewsAgendaPage, ProfilePage, ProgramPage } from './ContentPages.jsx';
+import { ContentAdminPage, DashboardHomePage, GalleryPage, HomePage, NewsAgendaPage, ProfilePage, ProgramPage } from './ContentPages.jsx';
+import { GalleryAdminPage } from './GalleryAdminPage.jsx';
 import { PpdbAdminPage, PpdbInfoPage, PpdbRegistrationPage, PpdbStatusPage } from './PpdbPages.jsx';
 import { LmsPage } from './LmsPages.jsx';
+import { UserManagementPage } from './UserManagementPage.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 
@@ -15,8 +17,10 @@ export default function App() {
   if (path.startsWith('/program/')) return <ProgramPage slug={decodeURIComponent(path.slice('/program/'.length))} />;
   if (path === '/berita-agenda') return <NewsAgendaPage />;
   if (path.startsWith('/berita/')) return <NewsAgendaPage newsSlug={decodeURIComponent(path.slice('/berita/'.length))} />;
-  if (path === '/kontak') return <ContactPage />;
+  if (path === '/galeri') return <GalleryPage />;
   if (path === '/dashboard/content') return <ContentAdminPage />;
+  if (path === '/dashboard/gallery') return <GalleryAdminPage />;
+  if (path === '/dashboard/users') return <UserManagementPage />;
   if (path === '/dashboard/admissions') return <PpdbAdminPage />;
   if (path === '/dashboard/classes') return <LmsPage />;
   if (path === '/ppdb') return <PpdbInfoPage />;
@@ -108,9 +112,8 @@ function DashboardContent({ user }) {
 
   return (
     <DashboardLayout user={user} onLogout={logout} loggingOut={loggingOut}>
-      <div className="page-heading"><div><p className="eyebrow">Dashboard</p><h1>Selamat datang, {user.displayName}</h1></div></div>
       {error && <Alert tone="danger">{error}</Alert>}
-      <EmptyState title="Belum ada aktivitas" description="Konten dan aktivitas untuk akun Anda akan tampil di sini." />
+      <DashboardHomePage user={user} />
     </DashboardLayout>
   );
 }

@@ -1,6 +1,6 @@
 import { pool } from '../../database/pool.js';
 
-const CLASS_COLUMNS = 'c.id, c.name, c.academic_year AS "academicYear", c.description, c.is_active AS "isActive", c.created_at AS "createdAt"';
+const CLASS_COLUMNS = 'c.id, c.name, c.academic_year AS "academicYear", c.description, c.program_id AS "programId", c.is_ppdb_enrollment_default AS "isPpdbDefault", c.is_active AS "isActive", c.created_at AS "createdAt"';
 const MATERIAL_COLUMNS = 'm.id, m.class_id AS "classId", m.subject_id AS "subjectId", m.title, m.body, m.attachment_name AS "attachmentName", m.attachment_mime AS "attachmentMime", m.attachment_bytes AS "attachmentBytes", m.created_at AS "createdAt", m.updated_at AS "updatedAt"';
 const ASSIGNMENT_COLUMNS = 'a.id, a.class_id AS "classId", a.subject_id AS "subjectId", a.title, a.description, a.due_at AS "dueAt", a.attachment_name AS "attachmentName", a.attachment_mime AS "attachmentMime", a.attachment_bytes AS "attachmentBytes", a.allow_resubmission AS "allowResubmission", a.created_at AS "createdAt", a.updated_at AS "updatedAt"';
 
@@ -36,21 +36,37 @@ export async function getAdminClasses() {
 }
 
 export async function createClass(item, adminId) {
-  const result = await pool.query(
-    `INSERT INTO classes (name, academic_year, description, created_by) VALUES ($1,$2,$3,$4)
-     RETURNING id, name, academic_year AS "academicYear", description, is_active AS "isActive", created_at AS "createdAt"`,
-    [item.name, item.academicYear, item.description, adminId],
-  );
-  return { ...result.rows[0], members: [], subjects: [] };
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (item.isPpdbDefault) await client.query('UPDATE classes SET is_ppdb_enrollment_default=false WHERE program_id=$1', [item.programId]);
+    const result = await client.query(
+      `INSERT INTO classes (name, academic_year, description, program_id, is_ppdb_enrollment_default, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, name, academic_year AS "academicYear", description, program_id AS "programId", is_ppdb_enrollment_default AS "isPpdbDefault", is_active AS "isActive", created_at AS "createdAt"`,
+      [item.name, item.academicYear, item.description, item.programId, item.isPpdbDefault, adminId],
+    );
+    await client.query('COMMIT');
+    return { ...result.rows[0], members: [], subjects: [] };
+  } catch (error) { await client.query('ROLLBACK'); throw error; }
+  finally { client.release(); }
 }
 
 export async function updateClass(id, item) {
-  const result = await pool.query(
-    `UPDATE classes SET name=$1, academic_year=$2, description=$3, is_active=$4
-     WHERE id=$5 RETURNING id, name, academic_year AS "academicYear", description, is_active AS "isActive", created_at AS "createdAt"`,
-    [item.name, item.academicYear, item.description, item.isActive, id],
-  );
-  return result.rows[0] ?? null;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (item.isPpdbDefault && item.programId) await client.query('UPDATE classes SET is_ppdb_enrollment_default=false WHERE program_id=$1 AND id<>$2', [item.programId,id]);
+    const result = await client.query(
+      `UPDATE classes SET name=$1, academic_year=$2, description=$3, is_active=$4,
+       program_id=COALESCE($5,program_id),is_ppdb_enrollment_default=$6
+       WHERE id=$7 RETURNING id, name, academic_year AS "academicYear", description, program_id AS "programId", is_ppdb_enrollment_default AS "isPpdbDefault", is_active AS "isActive", created_at AS "createdAt"`,
+      [item.name, item.academicYear, item.description, item.isActive, item.programId, item.isPpdbDefault, id],
+    );
+    await client.query('COMMIT');
+    return result.rows[0] ?? null;
+  } catch (error) { await client.query('ROLLBACK'); throw error; }
+  finally { client.release(); }
 }
 
 export async function addClassMember(classId, userId, membershipRole) {

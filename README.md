@@ -66,7 +66,7 @@ npm run migrate
 npm run seed
 ```
 
-Seed memerlukan `SEED_DEMO_PASSWORD` minimal 12 karakter di `.env`. Nilai contoh pada `.env.example` hanya untuk development lokal dan berlaku sama bagi akun berikut:
+Seed memakai `SEED_DEMO_PASSWORD` dari `.env` untuk seluruh akun di bawah. Nilai `login123` hanya untuk pengujian development:
 
 | Role | Email |
 |---|---|
@@ -75,6 +75,6 @@ Seed memerlukan `SEED_DEMO_PASSWORD` minimal 12 karakter di `.env`. Nilai contoh
 | Guru | `guru@demo.alazhar.test` |
 | Siswa | `siswa@demo.alazhar.test` |
 
-Password development contoh: `DemoOnly-ChangeMe-2026!`. Ganti nilai tersebut di `.env` bila dibutuhkan. Password hanya disimpan dalam bentuk bcrypt hash. Script menolak berjalan dengan `NODE_ENV=production`, aman dijalankan berulang, dan tidak menghapus data.
+Password development: `login123`. Password hanya disimpan dalam bentuk bcrypt hash. Script menolak berjalan dengan `NODE_ENV=production`, aman dijalankan berulang, dan tidak menghapus data. Jangan gunakan password ini di production.
 
-Seed dibatasi untuk lingkungan development dan membuat akun pengujian serta materi pembelajaran awal. Data identitas sekolah pada halaman publik mengacu pada informasi satuan pendidikan yang tersedia. Periode PPDB disimpan tertutup dan tidak dipublikasikan; jadwal, persyaratan, dan pengumuman tetap menunggu konfirmasi resmi sekolah. Agenda belum dipublikasikan sampai sekolah menetapkan kegiatan dan tanggalnya. Lengkapi informasi tersebut melalui dashboard sebelum periode pendaftaran atau kegiatan diumumkan kepada publik. Jangan gunakan akun atau password seed di production.
+Seed hanya untuk development. Periode PPDB disimpan tertutup dan tidak dipublikasikan; jadwal, persyaratan, pengumuman, serta agenda menunggu konfirmasi resmi sekolah. Lengkapi informasinya melalui dashboard sebelum mengumumkannya kepada publik. Jangan gunakan akun seed atau password `login123` di production.

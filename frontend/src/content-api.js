@@ -11,3 +11,21 @@ export async function requestJson(path, options = {}) {
 export function mediaUrl(mediaAssetId) {
   return mediaAssetId ? `${API_URL}/content/media/${mediaAssetId}` : null;
 }
+
+export const GALLERY_CATEGORIES = [
+  'Kegiatan belajar',
+  'Laboratorium & praktik',
+  'Ekstrakurikuler',
+  'Acara sekolah',
+];
+
+export const galleryApi = {
+  list: () => requestJson('/galleries'),
+  create: (item) => requestJson('/galleries', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item),
+  }),
+  update: (id, item) => requestJson(`/galleries/${encodeURIComponent(id)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item),
+  }),
+  remove: (id) => requestJson(`/galleries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+};

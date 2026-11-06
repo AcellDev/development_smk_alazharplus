@@ -4,6 +4,8 @@ import { healthRouter } from './modules/health/health.routes.js';
 import { contentRouter } from './modules/content/content.routes.js';
 import { ppdbRouter } from './modules/ppdb/ppdb.routes.js';
 import { lmsRouter } from './modules/lms/lms.routes.js';
+import { galleriesRouter } from './modules/galleries/galleries.routes.js';
+import { usersRouter } from './modules/users/users.routes.js';
 import { corsMiddleware } from './shared/http/cors.js';
 import { notFoundHandler, errorHandler } from './shared/http/errors.js';
 
@@ -16,5 +18,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/content', contentRouter);
 app.use('/api/ppdb', ppdbRouter);
 app.use('/api/lms', lmsRouter);
+app.use('/api/galleries', galleriesRouter);
+app.use('/api/users', usersRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);

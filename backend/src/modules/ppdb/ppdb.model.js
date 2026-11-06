@@ -1,4 +1,5 @@
 import { pool } from '../../database/pool.js';
+import bcrypt from 'bcryptjs';
 
 const PERIOD_COLUMNS = 'id, name, starts_at AS "startsAt", ends_at AS "endsAt", is_open AS "isOpen", is_published AS "isPublished", created_at AS "createdAt"';
 const REQUIREMENT_COLUMNS = 'id, period_id AS "periodId", name, description, is_required AS "isRequired", allowed_mime_types AS "allowedMimeTypes", max_bytes AS "maxBytes", display_order AS "displayOrder"';
@@ -27,7 +28,8 @@ export async function getPublicConfiguration() {
     period ? pool.query(`SELECT ${REQUIREMENT_COLUMNS} FROM ppdb_requirements WHERE period_id = $1 ORDER BY display_order, name`, [period.id]) : { rows: [] },
     period ? pool.query(`SELECT ${SCHEDULE_COLUMNS} FROM ppdb_schedule_items WHERE period_id = $1 ORDER BY display_order, starts_at NULLS LAST`, [period.id]) : { rows: [] },
   ]);
-  return { period, requirements: requirements.rows, schedule: schedule.rows, announcements: announcements.rows };
+  const programs = await pool.query('SELECT id,name,slug FROM programs WHERE is_published=true ORDER BY display_order,name');
+  return { period, requirements: requirements.rows, schedule: schedule.rows, announcements: announcements.rows, programs: programs.rows };
 }
 
 export async function createApplicantApplication(data, passwordHash) {
@@ -53,11 +55,12 @@ export async function createApplicantApplication(data, passwordHash) {
     const sequence = await client.query("SELECT nextval('ppdb_registration_number_seq') AS value");
     const registrationNumber = `PPDB-${String(sequence.rows[0].value).padStart(8, '0')}`;
     const applicantResult = await client.query(
-      `INSERT INTO applicants (user_id, period_id, registration_number, full_name, phone, address, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'Draft')
-       RETURNING id, registration_number AS "registrationNumber", full_name AS "fullName", phone, address, status, period_id AS "periodId"`,
-      [user.id, periodId, registrationNumber, data.fullName, data.phone, data.address],
+      `INSERT INTO applicants (user_id, period_id, registration_number, full_name, phone, address, program_id, status)
+       SELECT $1,$2,$3,$4,$5,$6,p.id,'Draft' FROM programs p WHERE p.id=$7 AND p.is_published=true
+       RETURNING id, registration_number AS "registrationNumber", full_name AS "fullName", phone, address, status, period_id AS "periodId", program_id AS "programId"`,
+      [user.id, periodId, registrationNumber, data.fullName, data.phone, data.address, data.programId],
     );
+    if (!applicantResult.rows[0]) { const error = new Error('Program keahlian tidak tersedia untuk pendaftaran.'); error.status = 400; error.code = 'PROGRAM_UNAVAILABLE'; throw error; }
     const applicant = applicantResult.rows[0];
     if (data.guardianName) {
       await client.query('INSERT INTO guardians (applicant_id, full_name, relationship, phone) VALUES ($1, $2, $3, $4)',
@@ -87,10 +90,11 @@ export async function createApplicantApplication(data, passwordHash) {
 export async function getApplicantForUser(userId) {
   const applicantResult = await pool.query(
     `SELECT applicants.id, applicants.registration_number AS "registrationNumber", applicants.full_name AS "fullName",
-       applicants.phone, applicants.address, applicants.status, applicants.period_id AS "periodId", applicants.created_at AS "createdAt",
+       applicants.phone, applicants.address, applicants.status, applicants.period_id AS "periodId", applicants.program_id AS "programId", programs.name AS "programName", applicants.created_at AS "createdAt",
        ppdb_periods.name AS "periodName", ppdb_periods.starts_at AS "periodStartsAt", ppdb_periods.ends_at AS "periodEndsAt", users.email
      FROM applicants JOIN ppdb_periods ON ppdb_periods.id = applicants.period_id
      JOIN users ON users.id=applicants.user_id
+     LEFT JOIN programs ON programs.id=applicants.program_id
      WHERE applicants.user_id = $1`, [userId],
   );
   const applicant = applicantResult.rows[0];
@@ -114,7 +118,7 @@ export async function updateApplicantDetails(userId, data) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const current = await client.query('SELECT id, status FROM applicants WHERE user_id=$1 FOR UPDATE', [userId]);
+    const current = await client.query('SELECT id, status, program_id AS "programId" FROM applicants WHERE user_id=$1 FOR UPDATE', [userId]);
     if (!current.rows[0]) { await client.query('ROLLBACK'); return { notFound: true }; }
     if (!['Draft', 'Perlu Perbaikan'].includes(current.rows[0].status)) {
       const error = new Error('Data hanya dapat diperbarui saat status Draft atau Perlu Perbaikan.'); error.status = 409; error.code = 'APPLICATION_LOCKED'; throw error;
@@ -122,6 +126,7 @@ export async function updateApplicantDetails(userId, data) {
     const id = current.rows[0].id;
     const result = await client.query('UPDATE applicants SET full_name=$1, phone=$2, address=$3, updated_at=now() WHERE id=$4 RETURNING id, full_name AS "fullName", phone, address',
       [data.fullName, data.phone, data.address, id]);
+    if (data.programId) await client.query('UPDATE applicants SET program_id=$1 WHERE id=$2', [data.programId, id]);
     await client.query('UPDATE users SET display_name=$1, updated_at=now() WHERE id=$2', [data.fullName, userId]);
     await client.query('DELETE FROM guardians WHERE applicant_id=$1', [id]);
     if (data.guardianName) await client.query('INSERT INTO guardians (applicant_id, full_name, relationship, phone) VALUES ($1,$2,$3,$4)',
@@ -177,6 +182,31 @@ export async function getAdminPeriods() {
      FROM ppdb_periods ORDER BY starts_at DESC NULLS LAST, created_at DESC`,
   );
   return result.rows;
+}
+
+export async function getAdminDashboard() {
+  const [summary, programInterest, recentApplications] = await Promise.all([
+    pool.query(
+      `SELECT count(*)::integer AS total,
+        count(*) FILTER (WHERE status IN ('Dikirim','Perlu Perbaikan'))::integer AS pending,
+        count(*) FILTER (WHERE status='Lulus')::integer AS accepted,
+        (SELECT count(*)::integer FROM ppdb_periods WHERE is_open=true AND is_published=true
+          AND (starts_at IS NULL OR starts_at<=now()) AND (ends_at IS NULL OR ends_at>=now())) AS "activePeriods"
+       FROM applicants`,
+    ),
+    pool.query(
+      `SELECT p.id AS "programId",p.name AS "programName",count(a.id)::integer AS count
+       FROM programs p LEFT JOIN applicants a ON a.program_id=p.id
+       WHERE p.is_published=true GROUP BY p.id,p.name ORDER BY count DESC,p.name`,
+    ),
+    pool.query(
+      `SELECT a.id,a.registration_number AS "registrationNumber",a.full_name AS "fullName",a.status,
+        a.created_at AS "createdAt",p.name AS "programName"
+       FROM applicants a LEFT JOIN programs p ON p.id=a.program_id
+       ORDER BY a.created_at DESC LIMIT 8`,
+    ),
+  ]);
+  return { stats: summary.rows[0], programInterest: programInterest.rows, recentApplications: recentApplications.rows };
 }
 
 export async function savePeriod(item, id = null) {
@@ -259,8 +289,9 @@ export async function listAdminApplications({ status, search, periodId }) {
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const result = await pool.query(
     `SELECT applicants.id, applicants.registration_number AS "registrationNumber", applicants.full_name AS "fullName", applicants.status,
-       applicants.created_at AS "createdAt", users.email, ppdb_periods.name AS "periodName"
+       applicants.created_at AS "createdAt", applicants.program_id AS "programId", programs.name AS "programName", users.email, ppdb_periods.name AS "periodName"
      FROM applicants JOIN users ON users.id=applicants.user_id JOIN ppdb_periods ON ppdb_periods.id=applicants.period_id
+     LEFT JOIN programs ON programs.id=applicants.program_id
      ${where} ORDER BY applicants.created_at DESC LIMIT $${params.length}`,
     params,
   );
@@ -270,8 +301,9 @@ export async function listAdminApplications({ status, search, periodId }) {
 export async function getAdminApplication(id) {
   const result = await pool.query(
     `SELECT applicants.id, applicants.registration_number AS "registrationNumber", applicants.full_name AS "fullName", applicants.phone,
-       applicants.address, applicants.status, applicants.created_at AS "createdAt", users.email, ppdb_periods.name AS "periodName", ppdb_periods.id AS "periodId"
-     FROM applicants JOIN users ON users.id=applicants.user_id JOIN ppdb_periods ON ppdb_periods.id=applicants.period_id WHERE applicants.id=$1`, [id],
+       applicants.address, applicants.status, applicants.created_at AS "createdAt", applicants.program_id AS "programId", programs.name AS "programName", users.email, ppdb_periods.name AS "periodName", ppdb_periods.id AS "periodId"
+     FROM applicants JOIN users ON users.id=applicants.user_id JOIN ppdb_periods ON ppdb_periods.id=applicants.period_id
+     LEFT JOIN programs ON programs.id=applicants.program_id WHERE applicants.id=$1`, [id],
   );
   const applicant = result.rows[0];
   if (!applicant) return null;
@@ -292,7 +324,11 @@ export async function updateApplicationStatus(id, status, note, staffUserId) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const result = await client.query('SELECT status FROM applicants WHERE id=$1 FOR UPDATE', [id]);
+    const result = await client.query(
+      `SELECT a.status,a.user_id AS "userId",a.full_name AS "fullName",a.program_id AS "programId",r.name AS role,p.name AS "programName"
+       FROM applicants a LEFT JOIN users u ON u.id=a.user_id LEFT JOIN roles r ON r.id=u.role_id
+       LEFT JOIN programs p ON p.id=a.program_id WHERE a.id=$1 FOR UPDATE OF a`, [id],
+    );
     if (!result.rows[0]) { await client.query('ROLLBACK'); return null; }
     const currentStatus = result.rows[0].status;
     const transitions = { 'Dikirim': ['Perlu Perbaikan', 'Terverifikasi'], 'Terverifikasi': ['Lulus', 'Tidak Lulus'] };
@@ -304,8 +340,27 @@ export async function updateApplicationStatus(id, status, note, staffUserId) {
       'INSERT INTO application_status_histories (applicant_id, from_status, to_status, note, changed_by) VALUES ($1,$2,$3,$4,$5)',
       [id, currentStatus, status, note, staffUserId],
     );
+    let lmsAccountProvisioned = false;
+    let lmsClassAssigned = false;
+    if (status === 'Lulus' && result.rows[0].userId && result.rows[0].role === 'applicant') {
+      const passwordHash = await bcrypt.hash('login123', 12);
+      await client.query(
+        `UPDATE users SET role_id=(SELECT id FROM roles WHERE name='student'),password_hash=$1,display_name=$2,updated_at=now() WHERE id=$3`,
+        [passwordHash,result.rows[0].fullName,result.rows[0].userId],
+      );
+      lmsAccountProvisioned = true;
+    }
+    if (status === 'Lulus' && result.rows[0].userId && result.rows[0].programId) {
+      const membership = await client.query(
+        `INSERT INTO class_memberships (class_id,user_id,membership_role)
+         SELECT c.id,$1,'student' FROM classes c WHERE c.program_id=$2 AND c.is_active=true AND c.is_ppdb_enrollment_default=true
+         ON CONFLICT (class_id,user_id) DO UPDATE SET membership_role='student' RETURNING class_id`,
+        [result.rows[0].userId,result.rows[0].programId],
+      );
+      lmsClassAssigned = membership.rowCount > 0;
+    }
     await client.query('COMMIT');
-    return { id, fromStatus: currentStatus, status, note };
+    return { id, fromStatus: currentStatus, status, note, lmsAccountProvisioned, lmsClassAssigned, programName: result.rows[0].programName ?? null };
   } catch (error) { await client.query('ROLLBACK'); throw error; }
   finally { client.release(); }
 }

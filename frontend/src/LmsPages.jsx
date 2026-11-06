@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Card, EmptyState, Input, Spinner, TextArea } from './components/ui.jsx';
-import { DashboardLayout } from './layouts.jsx';
+import { DashboardLayout, DashboardStatCards } from './layouts.jsx';
 import { API_URL, requestJson } from './content-api.js';
 
 export function LmsPage() {
@@ -24,8 +24,9 @@ function LmsSetup({ user }) {
   const [subjects, setSubjects] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [students, setStudents] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [selectedId, setSelectedId] = useState('');
-  const [classForm, setClassForm] = useState({ name: '', academicYear: '', description: '' });
+  const [classForm, setClassForm] = useState({ name: '', academicYear: '2026/2027', description: '', programId: '', isPpdbDefault: false });
   const [subjectName, setSubjectName] = useState('');
   const [classSubjectId, setClassSubjectId] = useState('');
   const [memberRole, setMemberRole] = useState('teacher');
@@ -35,11 +36,11 @@ function LmsSetup({ user }) {
   const [saving, setSaving] = useState(false);
 
   async function load() {
-    const [classItems, subjectItems, teacherItems, studentItems] = await Promise.all([
+    const [classItems, subjectItems, teacherItems, studentItems, programItems] = await Promise.all([
       requestJson('/lms/admin/classes'), requestJson('/lms/admin/subjects'),
-      requestJson('/lms/admin/users?role=teacher'), requestJson('/lms/admin/users?role=student'),
+      requestJson('/lms/admin/users?role=teacher'), requestJson('/lms/admin/users?role=student'), requestJson('/content/admin/programs'),
     ]);
-    setClasses(classItems); setSubjects(subjectItems); setTeachers(teacherItems); setStudents(studentItems);
+    setClasses(classItems); setSubjects(subjectItems); setTeachers(teacherItems); setStudents(studentItems); setPrograms(programItems);
     setSelectedId((current) => current || classItems[0]?.id || '');
     setClassSubjectId((current) => current || subjectItems[0]?.id || '');
     setMemberId((current) => current || teacherItems[0]?.id || studentItems[0]?.id || '');
@@ -51,7 +52,7 @@ function LmsSetup({ user }) {
     event.preventDefault(); setSaving(true); setError(''); setNotice('');
     try {
       const created = await requestJson('/lms/admin/classes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(classForm) });
-      setClassForm({ name: '', academicYear: '', description: '' }); setSelectedId(created.id); setNotice('Kelas berhasil dibuat.'); await load();
+      setClassForm({ name: '', academicYear: '2026/2027', description: '', programId: '', isPpdbDefault: false }); setSelectedId(created.id); setNotice('Kelas berhasil dibuat.'); await load();
     } catch (e) { setError(e.message); } finally { setSaving(false); }
   }
 
@@ -81,8 +82,26 @@ function LmsSetup({ user }) {
     if (!selected) return;
     setSaving(true); setError('');
     try {
-      await requestJson(`/lms/admin/classes/${selected.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: selected.name, academicYear: selected.academicYear, description: selected.description ?? '', isActive: !selected.isActive }) });
+      await requestJson(`/lms/admin/classes/${selected.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: selected.name, academicYear: selected.academicYear, description: selected.description ?? '', programId: selected.programId, isPpdbDefault: selected.isPpdbDefault, isActive: !selected.isActive }) });
       setNotice(selected.isActive ? 'Kelas dinonaktifkan. Data pembelajaran tetap tersimpan.' : 'Kelas diaktifkan.'); await load();
+    } catch (e) { setError(e.message); } finally { setSaving(false); }
+  }
+
+  async function assignClassProgram(programId) {
+    if (!selected || !programId || programId === selected.programId) return;
+    setSaving(true); setError(''); setNotice('');
+    try {
+      await requestJson(`/lms/admin/classes/${selected.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: selected.name, academicYear: selected.academicYear, description: selected.description ?? '', programId, isPpdbDefault: selected.isPpdbDefault, isActive: selected.isActive }) });
+      setNotice('Program keahlian kelas berhasil ditautkan. Pendaftar yang lulus dapat dimasukkan otomatis ke kelas ini.'); await load();
+    } catch (e) { setError(e.message); } finally { setSaving(false); }
+  }
+
+  async function setEnrollmentDefault(isPpdbDefault) {
+    if (!selected?.programId || selected.isPpdbDefault === isPpdbDefault) return;
+    setSaving(true); setError(''); setNotice('');
+    try {
+      await requestJson(`/lms/admin/classes/${selected.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: selected.name, academicYear: selected.academicYear, description: selected.description ?? '', programId: selected.programId, isPpdbDefault, isActive: selected.isActive }) });
+      setNotice(isPpdbDefault ? 'Kelas ini ditetapkan sebagai tujuan otomatis PPDB untuk programnya.' : 'Penetapan kelas tujuan PPDB dihapus.'); await load();
     } catch (e) { setError(e.message); } finally { setSaving(false); }
   }
 
@@ -101,10 +120,11 @@ function LmsSetup({ user }) {
   return <LmsShell user={user} eyebrow="Persiapan LMS" title="Kelas dan keanggotaan">
     {error && <Alert tone="danger" role="alert">{error}</Alert>}{notice && <Alert tone="info" role="status">{notice}</Alert>}
     <div className="lms-admin-grid">
-      <Card><h2>Buat kelas</h2><form className="form-stack" onSubmit={createClass}><Input label="Nama kelas" required maxLength={120} value={classForm.name} onChange={(e) => setClassForm({ ...classForm, name: e.target.value })} /><Input label="Tahun ajaran" required maxLength={30} placeholder="Contoh: 2026/2027" value={classForm.academicYear} onChange={(e) => setClassForm({ ...classForm, academicYear: e.target.value })} /><TextArea label="Keterangan" rows={3} maxLength={1000} value={classForm.description} onChange={(e) => setClassForm({ ...classForm, description: e.target.value })} /><Button disabled={saving}>{saving ? 'Menyimpan…' : 'Buat kelas'}</Button></form></Card>
+      <Card><h2>Buat kelas</h2><form className="form-stack" onSubmit={createClass}><Input label="Nama kelas" required maxLength={120} value={classForm.name} onChange={(e) => setClassForm({ ...classForm, name: e.target.value })} /><Input label="Tahun ajaran" required maxLength={30} placeholder="Contoh: 2026/2027" value={classForm.academicYear} onChange={(e) => setClassForm({ ...classForm, academicYear: e.target.value })} /><div className="field"><label htmlFor="new-class-program">Program keahlian</label><select id="new-class-program" className="input" required value={classForm.programId} onChange={(e) => setClassForm({ ...classForm, programId: e.target.value, isPpdbDefault: false })}><option value="">Pilih program</option>{programs.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></div><label className="check-field"><input type="checkbox" checked={classForm.isPpdbDefault} disabled={!classForm.programId} onChange={(e) => setClassForm({ ...classForm, isPpdbDefault: e.target.checked })} /> Jadikan kelas tujuan otomatis untuk siswa PPDB pada program ini</label><TextArea label="Keterangan" rows={3} maxLength={1000} value={classForm.description} onChange={(e) => setClassForm({ ...classForm, description: e.target.value })} /><Button disabled={saving || !programs.length}>{saving ? 'Menyimpan…' : 'Buat kelas'}</Button></form></Card>
       <Card><h2>Daftar kelas</h2>{classes.length ? <div className="lms-class-list">{classes.map((item) => <button className={selectedId === item.id ? 'lms-class-option selected' : 'lms-class-option'} key={item.id} onClick={() => setSelectedId(item.id)}><strong>{item.name}</strong><span>{item.academicYear} · {item.isActive ? 'Aktif' : 'Nonaktif'}</span></button>)}</div> : <EmptyState title="Belum ada kelas" description="Buat kelas untuk mulai mengatur guru, siswa, dan mata pelajaran." />}</Card>
     </div>
     {selected && <section className="surface-card lms-setup-detail"><div className="page-heading"><div><p className="eyebrow">{selected.academicYear}</p><h2>{selected.name}</h2>{selected.description && <p className="muted">{selected.description}</p>}</div><Button variant="secondary" onClick={toggleClass} disabled={saving}>{selected.isActive ? 'Nonaktifkan kelas' : 'Aktifkan kelas'}</Button></div>
+      <div className="class-program-assignment"><div className="field"><label htmlFor="existing-class-program">Program keahlian kelas</label><select id="existing-class-program" className="input" value={selected.programId ?? ''} onChange={(e) => assignClassProgram(e.target.value)} disabled={saving}><option value="">Belum ditautkan</option>{programs.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></div><div><label className="check-field"><input type="checkbox" checked={Boolean(selected.isPpdbDefault)} disabled={!selected.programId || saving} onChange={(e) => setEnrollmentDefault(e.target.checked)} /> Jadikan kelas tujuan otomatis PPDB untuk program ini</label><p className="muted">Tandai satu kelas aktif per program agar siswa yang lulus masuk ke kelas yang tepat.</p></div></div>
       <div className="lms-admin-grid">
         <section><h3>Mata pelajaran</h3>{selected.subjects.length ? <ul className="lms-member-list">{selected.subjects.map((item) => <li key={item.id}><span>{item.name}</span><Button variant="secondary" onClick={() => removeSubject(item.id)}>Lepas</Button></li>)}</ul> : <p className="muted">Belum ada mata pelajaran pada kelas ini.</p>}
           <form className="inline-admin-form" onSubmit={linkSubject}><div className="field"><label htmlFor="class-subject">Hubungkan mata pelajaran</label><select id="class-subject" className="input" value={classSubjectId} onChange={(e) => setClassSubjectId(e.target.value)}><option value="">Pilih mata pelajaran</option>{subjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div><Button disabled={saving || !classSubjectId || !selected.isActive}>Hubungkan</Button></form>
@@ -120,6 +140,7 @@ function LmsSetup({ user }) {
 
 function TeacherWorkspace({ user }) {
   const [classes, setClasses] = useState([]);
+  const [totals, setTotals] = useState({ materials: 0, assignments: 0, submissions: 0 });
   const [classId, setClassId] = useState('');
   const [course, setCourse] = useState(null);
   const [tab, setTab] = useState('materials');
@@ -134,6 +155,12 @@ function TeacherWorkspace({ user }) {
 
   async function loadClasses() {
     const items = await requestJson('/lms/teacher/classes'); setClasses(items);
+    const courses = (await Promise.all(items.map((item) => requestJson(`/lms/teacher/classes/${item.id}`).catch(() => null)))).filter(Boolean);
+    setTotals({
+      materials: courses.reduce((sum, item) => sum + item.materials.length, 0),
+      assignments: courses.reduce((sum, item) => sum + item.assignments.length, 0),
+      submissions: courses.reduce((sum, item) => sum + item.assignments.reduce((count, assignment) => count + Number(assignment.submissionCount || 0), 0), 0),
+    });
     setClassId((current) => current || items[0]?.id || '');
   }
   async function loadCourse(id = classId) {
@@ -146,8 +173,9 @@ function TeacherWorkspace({ user }) {
   useEffect(() => { loadClasses().catch((e) => setError(e.message)).finally(() => setLoading(false)); }, []);
   useEffect(() => { if (classId) loadCourse(classId); }, [classId]);
 
-  function beginNew(kind) { setEditing({ kind, id: null, title: '', subjectId: '', body: '', description: '', dueAt: '', allowResubmission: false }); setError(''); setNotice(''); }
+  function beginNew(kind) { setTab(kind === 'material' ? 'materials' : 'assignments'); setEditing({ kind, id: null, title: '', subjectId: '', body: '', description: '', dueAt: '', allowResubmission: false }); setError(''); setNotice(''); }
   function beginEdit(kind, item) {
+    setTab(kind === 'material' ? 'materials' : 'assignments');
     setEditing({ kind, id: item.id, title: item.title, subjectId: item.subjectId ?? '', body: item.body ?? '', description: item.description ?? '', dueAt: toLocalDateTime(item.dueAt), allowResubmission: item.allowResubmission ?? false, attachmentName: item.attachmentName });
     setError(''); setNotice('');
   }
@@ -167,7 +195,7 @@ function TeacherWorkspace({ user }) {
   }
 
   async function openSubmissions(assignment) {
-    setAssignmentId(assignment.id); setError('');
+    setAssignmentId(assignment.id); setTab('submissions'); setError('');
     try {
       const items = await requestJson(`/lms/teacher/classes/${classId}/assignments/${assignment.id}/submissions`);
       setSubmissions(items); setGradeDrafts(Object.fromEntries(items.map((item) => [item.id, { score: item.score ?? '', feedback: item.feedback ?? '', isPublished: item.isPublished ?? false }])));
@@ -182,15 +210,22 @@ function TeacherWorkspace({ user }) {
     } catch (e) { setError(e.message); } finally { setSaving(false); }
   }
 
+  const teacherStats = [
+    { label: 'Total kelas', value: classes.length, icon: '▦' },
+    { label: 'Total materi', value: totals.materials, icon: '▤' },
+    { label: 'Total tugas', value: totals.assignments, icon: '✓' },
+    { label: 'Pengumpulan siswa', value: totals.submissions, icon: '◷' },
+  ];
+
   return <LmsShell user={user} eyebrow="Ruang guru" title="Kelas dan pembelajaran">
+    <DashboardStatCards items={teacherStats} />
     {error && <Alert tone="danger" role="alert">{error}</Alert>}{notice && <Alert tone="info" role="status">{notice}</Alert>}
     {!classes.length && !loading ? <EmptyState title="Belum ada kelas yang ditugaskan" description="Hubungi admin sekolah untuk menambahkan akun Anda sebagai guru di kelas." /> : <>
       <div className="field class-picker"><label htmlFor="teacher-class">Kelas</label><select id="teacher-class" className="input" value={classId} onChange={(e) => { setClassId(e.target.value); setEditing(null); setAssignmentId(''); }}><option value="">Pilih kelas</option>{classes.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.academicYear}</option>)}</select></div>
       {loading ? <div className="state-wrap"><Spinner /> Memuat kelas…</div> : course && <>
         <Card className="lms-course-head"><p className="eyebrow">{course.academicYear}</p><h2>{course.name}</h2>{course.description && <p>{course.description}</p>}<p className="muted">Mata pelajaran: {course.subjects.map((item) => item.name).join(', ') || 'Belum ditetapkan'}</p></Card>
-        <div className="ppdb-admin-tabs" role="tablist" aria-label="Menu pembelajaran"><button role="tab" aria-selected={tab === 'materials'} className={tab === 'materials' ? 'selected' : ''} onClick={() => { setTab('materials'); setAssignmentId(''); }}>Materi</button><button role="tab" aria-selected={tab === 'assignments'} className={tab === 'assignments' ? 'selected' : ''} onClick={() => { setTab('assignments'); setAssignmentId(''); }}>Tugas dan pengumpulan</button></div>
-        {editing ? <TeacherEditor editing={editing} setEditing={setEditing} subjects={course.subjects} onSubmit={saveLearningItem} saving={saving} /> : tab === 'materials' ? <section className="lms-section"><div className="section-heading"><div><p className="eyebrow">Bahan belajar</p><h2>Materi kelas</h2></div><Button onClick={() => beginNew('material')}>Unggah materi</Button></div>{course.materials.length ? <div className="lms-card-grid">{course.materials.map((item) => <Card key={item.id}><div className="lms-item-top"><div><h3>{item.title}</h3><p className="muted">{item.subjectName || 'Umum'} · {formatDate(item.createdAt)}</p></div><Button variant="secondary" onClick={() => beginEdit('material', item)}>Ubah</Button></div>{item.body && <p className="formatted-copy">{item.body}</p>}{item.attachmentName && <button className="text-link file-download" onClick={() => downloadFile('material', item.id, item.attachmentName).catch((e) => setError(e.message))}>Unduh {item.attachmentName}</button>}</Card>)}</div> : <EmptyState title="Belum ada materi" description="Unggah materi untuk kelas yang Anda ampu." />}</section> : <TeacherAssignmentList course={course} onNew={() => beginNew('assignment')} onEdit={(item) => beginEdit('assignment', item)} onSubmissions={openSubmissions} />}
-        {tab === 'assignments' && assignmentId && <SubmissionReview submissions={submissions} drafts={gradeDrafts} setDrafts={setGradeDrafts} onSave={saveGrade} saving={saving} />}
+        <div className="ppdb-admin-tabs" role="tablist" aria-label="Alur kerja guru"><button type="button" role="tab" aria-selected={tab === 'classes'} className={tab === 'classes' ? 'selected' : ''} onClick={() => { setTab('classes'); setAssignmentId(''); setEditing(null); }}>Pilih kelas</button><button type="button" role="tab" aria-selected={tab === 'materials'} className={tab === 'materials' ? 'selected' : ''} onClick={() => { setTab('materials'); setAssignmentId(''); setEditing(null); }}>Materi</button><button type="button" role="tab" aria-selected={tab === 'assignments'} className={tab === 'assignments' ? 'selected' : ''} onClick={() => { setTab('assignments'); setAssignmentId(''); setEditing(null); }}>Tugas</button><button type="button" role="tab" aria-selected={tab === 'submissions'} className={tab === 'submissions' ? 'selected' : ''} onClick={() => setTab('submissions')}>Pengumpulan &amp; Nilai</button></div>
+        {editing ? <TeacherEditor editing={editing} setEditing={setEditing} subjects={course.subjects} onSubmit={saveLearningItem} saving={saving} /> : tab === 'classes' ? <Card className="lms-workflow-card"><p className="eyebrow">Langkah 1</p><h2>Pilih kelas yang akan dikelola</h2><p className="muted">Kelas aktif: {course.name}. Gunakan pilihan kelas di atas untuk berpindah kelas.</p></Card> : tab === 'materials' ? <section className="lms-section"><div className="section-heading"><div><p className="eyebrow">Langkah 2 · Bahan belajar</p><h2>Materi kelas</h2></div><Button onClick={() => beginNew('material')}>Unggah materi</Button></div>{course.materials.length ? <div className="lms-card-grid">{course.materials.map((item) => <Card key={item.id}><div className="lms-item-top"><div><h3>{item.title}</h3><p className="muted">{item.subjectName || 'Umum'} · {formatDate(item.createdAt)}</p></div><Button variant="secondary" onClick={() => beginEdit('material', item)}>Ubah</Button></div>{item.body && <p className="formatted-copy">{item.body}</p>}{item.attachmentName && <button className="text-link file-download" onClick={() => downloadFile('material', item.id, item.attachmentName).catch((e) => setError(e.message))}>Unduh {item.attachmentName}</button>}</Card>)}</div> : <EmptyState title="Belum ada materi" description="Unggah materi untuk kelas yang Anda ampu." />}</section> : tab === 'assignments' ? <TeacherAssignmentList course={course} onNew={() => beginNew('assignment')} onEdit={(item) => beginEdit('assignment', item)} onSubmissions={openSubmissions} /> : assignmentId ? <SubmissionReview submissions={submissions} drafts={gradeDrafts} setDrafts={setGradeDrafts} onSave={saveGrade} saving={saving} /> : <EmptyState title="Pilih tugas untuk diperiksa" description="Buka tab Tugas lalu pilih Periksa pengumpulan pada tugas yang ingin dinilai." />}
       </>}
     </>}
   </LmsShell>;
@@ -223,6 +258,7 @@ function SubmissionReview({ submissions, drafts, setDrafts, onSave, saving }) {
 
 function StudentWorkspace({ user }) {
   const [classes, setClasses] = useState([]);
+  const [totals, setTotals] = useState({ materials: 0, activeAssignments: 0 });
   const [classId, setClassId] = useState('');
   const [course, setCourse] = useState(null);
   const [error, setError] = useState('');
@@ -234,6 +270,11 @@ function StudentWorkspace({ user }) {
 
   async function loadClasses() {
     const items = await requestJson('/lms/student/classes'); setClasses(items);
+    const courses = (await Promise.all(items.map((item) => requestJson(`/lms/student/classes/${item.id}`).catch(() => null)))).filter(Boolean);
+    setTotals({
+      materials: courses.reduce((sum, item) => sum + item.materials.length, 0),
+      activeAssignments: courses.reduce((sum, item) => sum + item.assignments.filter((assignment) => !assignment.isGraded && (!assignment.dueAt || new Date(assignment.dueAt).getTime() >= Date.now())).length, 0),
+    });
     setClassId((current) => current || items[0]?.id || '');
   }
   async function loadCourse(id = classId) {
@@ -256,7 +297,14 @@ function StudentWorkspace({ user }) {
     } catch (e) { setError(e.message); } finally { setSaving(false); }
   }
 
+  const studentStats = [
+    { label: 'Kelas diikuti', value: classes.length, icon: '▦' },
+    { label: 'Materi tersedia', value: totals.materials, icon: '▤' },
+    { label: 'Tugas aktif', value: totals.activeAssignments, icon: '✓' },
+  ];
+
   return <LmsShell user={user} eyebrow="Ruang siswa" title="Kelas dan pembelajaran">
+    <DashboardStatCards items={studentStats} />
     {error && <Alert tone="danger" role="alert">{error}</Alert>}{notice && <Alert tone="info" role="status">{notice}</Alert>}
     {!classes.length && !loading ? <EmptyState title="Belum ada kelas" description="Admin sekolah akan menambahkan akun Anda ke kelas yang diikuti." /> : <>
       <div className="field class-picker"><label htmlFor="student-class">Kelas</label><select id="student-class" className="input" value={classId} onChange={(e) => setClassId(e.target.value)}><option value="">Pilih kelas</option>{classes.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.academicYear}</option>)}</select></div>
