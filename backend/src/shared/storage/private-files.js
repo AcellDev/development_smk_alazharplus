@@ -23,5 +23,15 @@ export async function removePrivateFile(key) {
 
 export async function readPrivateFile(key) {
   if (!/^[0-9a-f-]{36}\.(pdf|jpg|png|webp)$/.test(key)) return null;
-  return readFile(path.join(privateDirectory, key));
+  const candidateDirs = [
+    privateDirectory,
+    path.resolve(process.cwd(), 'var', 'private-uploads'),
+    path.resolve(process.cwd(), '..', 'var', 'private-uploads'),
+  ];
+  for (const dir of candidateDirs) {
+    try {
+      return await readFile(path.join(dir, key));
+    } catch {}
+  }
+  return null;
 }

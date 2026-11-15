@@ -200,7 +200,7 @@ export function PpdbAdminPage() {
   const [state, setState] = useState('loading');
   useEffect(() => {
     requestJson('/auth/session').then(({ user: current }) => {
-      if (current.role !== 'admin_ppdb') throw new Error('Halaman ini hanya tersedia untuk panitia PPDB.');
+      if (!['admin_ppdb', 'admin_website'].includes(current.role)) throw new Error('Halaman ini hanya tersedia untuk panitia PPDB.');
       setUser(current); setState('ready');
     }).catch(() => setState('denied'));
   }, []);

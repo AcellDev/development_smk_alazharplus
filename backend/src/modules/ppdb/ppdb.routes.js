@@ -18,7 +18,7 @@ import { readPrivateDocument, removePrivateDocument, writePrivateDocument } from
 
 export const ppdbRouter = Router();
 const applicantOnly = [requireAuthentication, requireRoles('applicant')];
-const committeeOnly = [requireAuthentication, requireRoles('admin_ppdb')];
+const committeeOnly = [requireAuthentication, requireRoles('admin_ppdb', 'admin_website')];
 const configuredPrivateMax = Number(process.env.PRIVATE_UPLOAD_MAX_BYTES ?? 10 * 1024 * 1024);
 const maximumDocumentSize = Number.isSafeInteger(configuredPrivateMax) && configuredPrivateMax > 0
   ? Math.min(configuredPrivateMax, 10 * 1024 * 1024)
@@ -101,7 +101,7 @@ ppdbRouter.post('/applications/mine/documents', ...applicantOnly, documentUpload
   }
 });
 
-ppdbRouter.get('/documents/:id', requireAuthentication, requireRoles('applicant', 'admin_ppdb'), async (request, response, next) => {
+ppdbRouter.get('/documents/:id', requireAuthentication, requireRoles('applicant', 'admin_ppdb', 'admin_website'), async (request, response, next) => {
   try {
     validateId(request.params.id, 'Dokumen');
     const document = await getAuthorizedDocument(request.params.id, request.user);

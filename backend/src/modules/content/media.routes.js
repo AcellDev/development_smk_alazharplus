@@ -54,9 +54,22 @@ mediaUploadRouter.get('/:id', async (request, response, next) => {
     if (!asset || !/^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(asset.storageKey)) {
       return response.status(404).json({ error: { code: 'NOT_FOUND', message: 'Media tidak ditemukan.' } });
     }
-    const absolutePath = path.resolve(uploadDirectory, asset.storageKey);
-    if (!absolutePath.startsWith(`${uploadDirectory}${path.sep}`)) return response.sendStatus(404);
-    const bytes = await readFile(absolutePath);
+    const candidateDirs = [
+      uploadDirectory,
+      path.resolve(process.cwd(), 'var', 'uploads'),
+      path.resolve(process.cwd(), '..', 'var', 'uploads'),
+    ];
+    let bytes = null;
+    for (const dir of candidateDirs) {
+      const candidatePath = path.resolve(dir, asset.storageKey);
+      try {
+        bytes = await readFile(candidatePath);
+        if (bytes) break;
+      } catch {
+        // coba kandidat berikutnya
+      }
+    }
+    if (!bytes) return response.sendStatus(404);
     response.setHeader('Content-Type', asset.mediaType);
     response.setHeader('Content-Length', bytes.length);
     response.setHeader('Cache-Control', 'public, max-age=3600');
